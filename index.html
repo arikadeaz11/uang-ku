@@ -63,10 +63,15 @@
 </div>
 
 <script>
-    // URL Web App dari Google Apps Script kamu
+    // URL Web App dari Google Apps Script kamu (ganti dengan URL asli Anda)
     const SHEETS_URL = "https://script.google.com/macros/s/AKfycbwCMl7463LmrJfh5NMSHSp9Ri4ECeUOuEQZz5H4iac9ZuL21RfwNlsbFYAqL1oq85s/exec";
 
-    let transactions = JSON.parse(localStorage.getItem('vindi_ai_db')) || [];
+    let transactions = [];
+    try {
+        transactions = JSON.parse(localStorage.getItem('vindi_ai_db')) || [];
+    } catch (e) {
+        transactions = [];
+    }
 
     function formatIDR(num) {
         return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(num);
@@ -77,15 +82,22 @@
         const aInput = document.getElementById('amount-input');
         const btn = document.getElementById('btn-save');
         
-        if (!dInput.value || !aInput.value) return;
+        if (!dInput.value.trim() || !aInput.value.trim()) {
+            alert("Isi deskripsi dan nominal!");
+            return;
+        }
 
-        // 1. Proses Angka
+        // Proses Angka dengan validasi
         let amtTxt = aInput.value.toLowerCase().replace(/[^0-9a-z]/g, '');
         let amount = parseInt(amtTxt.replace(/[^0-9]/g, '')) || 0;
         if (amtTxt.includes('jt')) amount *= 1000000;
         else if (amtTxt.includes('rb') || amtTxt.includes('k')) amount *= 1000;
+        if (isNaN(amount) || amount <= 0) {
+            alert("Nominal harus angka positif!");
+            return;
+        }
 
-        const originalDesc = dInput.value;
+        const originalDesc = dInput.value.trim();
         
         // UI Loading
         btn.disabled = true;
@@ -93,32 +105,59 @@
         dInput.value = "🤖 Gemini sedang menganalisis...";
         dInput.disabled = true;
 
+        let ai = { category: 'Lainnya', type: 'expense', icon: '💸' }; // Default fallback
+
         try {
-            // 2. Kirim ke Backend (GAS + Gemini)
+            // Cek koneksi
+            if (!navigator.onLine) throw new Error("Offline");
+
             const response = await fetch(SHEETS_URL, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ description: originalDesc, amount: amount })
             });
             
-            const ai = await response.json();
-
-            // 3. Gabungkan Data
-            const newTx = {
-                id: Date.now(),
-                desc: originalDesc,
-                amount: amount,
-                category: ai.category,
-                type: ai.type,
-                icon: ai.icon
-            };
-
-            transactions.unshift(newTx);
-            localStorage.setItem('vindi_ai_db', JSON.stringify(transactions));
-            render();
+            if (!response.ok) throw new Error("GAS error");
+            
+            ai = await response.json();
+            if (!ai.category || !ai.type || !ai.icon) throw new Error("AI response invalid");
 
         } catch (err) {
-            alert("Koneksi gagal, pastikan Apps Script sudah di-deploy dengan benar.");
+            console.error(err);
+            alert("AI gagal, menggunakan klasifikasi default. Pastikan koneksi internet dan GAS setup benar.");
+            // Fallback manual berdasarkan keyword
+            const lowerDesc = originalDesc.toLowerCase();
+            if (lowerDesc.includes('gaji') || lowerDesc.includes('thr') || lowerDesc.includes('bonus')) {
+                ai = { category: 'Gaji', type: 'income', icon: '💼' };
+            } else if (lowerDesc.includes('makan') || lowerDesc.includes('nasi') || lowerDesc.includes('ayam')) {
+                ai = { category: 'Makanan', type: 'expense', icon: '🍲' };
+            } else if (lowerDesc.includes('transport') || lowerDesc.includes('ojek') || lowerDesc.includes('bensin')) {
+                ai = { category: 'Transportasi', type: 'expense', icon: '🚗' };
+            } else if (lowerDesc.includes('belanja') || lowerDesc.includes('toko')) {
+                ai = { category: 'Belanja', type: 'expense', icon: '🛒' };
+            } else if (lowerDesc.includes('hibur') || lowerDesc.includes('film') || lowerDesc.includes('game')) {
+                ai = { category: 'Hiburan', type: 'expense', icon: '🎬' };
+            }
+            // Jika tidak match, tetap default
         }
+
+        // Gabungkan Data
+        const newTx = {
+            id: Date.now(),
+            desc: originalDesc,
+            amount: amount,
+            category: ai.category,
+            type: ai.type,
+            icon: ai.icon
+        };
+
+        transactions.unshift(newTx);
+        try {
+            localStorage.setItem('vindi_ai_db', JSON.stringify(transactions));
+        } catch (e) {
+            alert("Gagal simpan ke penyimpanan lokal.");
+        }
+        render();
 
         // Reset UI
         dInput.disabled = false;
@@ -131,7 +170,11 @@
     function deleteTx(id) {
         if(confirm("Hapus dari daftar HP?")) {
             transactions = transactions.filter(t => t.id !== id);
-            localStorage.setItem('vindi_ai_db', JSON.stringify(transactions));
+            try {
+                localStorage.setItem('vindi_ai_db', JSON.stringify(transactions));
+            } catch (e) {
+                alert("Gagal update penyimpanan lokal.");
+            }
             render();
         }
     }
