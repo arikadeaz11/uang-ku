@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Keuangan Saya</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+    </style>
+</head>
+<body>
+
+<div id="app" class="max-w-md mx-auto min-h-screen pb-20">
+
+    <div class="bg-gradient-to-br from-indigo-600 to-purple-600 p-8 rounded-b-[40px] text-white text-center shadow-xl">
+        <p class="text-indigo-100 text-sm font-semibold opacity-90">Total Saldo</p>
+        <h1 id="balance" class="text-3xl font-extrabold mt-1">Rp 0</h1>
+        
+        <div class="flex gap-4 mt-6">
+            <div class="bg-white/20 backdrop-blur-md p-3 rounded-2xl flex-1 border border-white/10">
+                <p class="text-[10px] uppercase font-bold text-indigo-100">Pemasukan</p>
+                <p id="total-income" class="text-sm font-bold text-emerald-300">Rp 0</p>
+            </div>
+            <div class="bg-white/20 backdrop-blur-md p-3 rounded-2xl flex-1 border border-white/10">
+                <p class="text-[10px] uppercase font-bold text-indigo-100">Pengeluaran</p>
+                <p id="total-expense" class="text-sm font-bold text-rose-300">Rp 0</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="px-6 -mt-8">
+        <div class="bg-white p-5 rounded-3xl shadow-lg border border-gray-100">
+            <div class="space-y-3">
+                <input type="text" id="desc-input" placeholder="Deskripsi (cth: Gaji / Bakso)" class="w-full p-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                <div class="flex gap-2">
+                    <input type="text" id="amount-input" placeholder="Nominal (cth: 20rb)" class="flex-1 p-3 bg-gray-50 rounded-xl outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                    <button onclick="addTransaction()" class="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold hover:bg-indigo-700 active:scale-95 transition-all">
+                        Catat
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="px-6 mt-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-extrabold text-gray-800">Riwayat Transaksi</h3>
+            <button onclick="clearData()" class="text-xs text-rose-500 font-bold hover:underline">Reset Data</button>
+        </div>
+        
+        <div id="transaction-list" class="space-y-3 pb-10">
+            </div>
+    </div>
+
+</div>
+
+<script>
+    // 1. Ambil data dari memori HP
+    let transactions = JSON.parse(localStorage.getItem('keuangan_data')) || [];
+
+    // 2. Format Angka ke Rupiah
+    function formatIDR(amount) {
+        return new Intl.NumberFormat('id-ID', { 
+            style: 'currency', currency: 'IDR', maximumFractionDigits: 0 
+        }).format(amount);
+    }
+
+    // 3. Simpan Data ke LocalStorage
+    function saveData() {
+        localStorage.setItem('keuangan_data', JSON.stringify(transactions));
+        render();
+    }
+
+    // 4. Tambah Transaksi Baru
+    function addTransaction() {
+        const descInput = document.getElementById('desc-input');
+        const amountInput = document.getElementById('amount-input');
+        
+        const desc = descInput.value;
+        const amountStr = amountInput.value;
+
+        if(!desc || !amountStr) { alert("Isi dulu deskripsi dan harganya!"); return; }
+
+        // Logika Pintar: Ubah "50rb" jadi 50000
+        let clean = amountStr.toLowerCase().replace(/[^0-9a-z]/g, '');
+        let amount = parseInt(clean.replace(/[^0-9]/g, '')) || 0;
+        
+        if (clean.includes('jt') || clean.includes('juta')) amount *= 1000000;
+        else if (clean.includes('rb') || clean.includes('ribu') || clean.includes('k')) amount *= 1000;
+
+        // Cek Tipe: Gaji/THR/Bonus = Income, Sisanya = Expense
+        const lowerDesc = desc.toLowerCase();
+        const type = (lowerDesc.includes('gaji') || lowerDesc.includes('thr') || lowerDesc.includes('bonus')) ? 'income' : 'expense';
+
+        const newTx = {
+            id: Date.now(),
+            description: desc,
+            amount: amount,
+            type: type
+        };
+
+        transactions.unshift(newTx);
+        saveData();
+
+        // Kosongkan form
+        descInput.value = '';
+        amountInput.value = '';
+    }
+
+    // 5. Hapus Satu Transaksi
+    function deleteTx(id) {
+        if(confirm("Hapus yang ini?")) {
+            transactions = transactions.filter(t => t.id !== id);
+            saveData();
+        }
+    }
+
+    // 6. Reset Semua Data
+    function clearData() {
+        if(confirm("Hapus SEMUA data?")) {
+            transactions = [];
+            saveData();
+        }
+    }
+
+    // 7. Render (Tampilkan ke Layar)
+    function render() {
+        const list = document.getElementById('transaction-list');
+        list.innerHTML = ''; // Bersihkan layar
+        
+        let total = 0, income = 0, expense = 0;
+
+        if(transactions.length === 0) {
+            list.innerHTML = '<p class="text-center text-gray-400 text-sm mt-10">Belum ada catatan.</p>';
+        }
+
+        transactions.forEach(tx => {
+            if(tx.type === 'income') { income += tx.amount; total += tx.amount; }
+            else { expense += tx.amount; total -= tx.amount; }
+
+            const color = tx.type === 'income' ? 'text-emerald-600' : 'text-rose-600';
+            const icon = tx.type === 'income' ? '💰' : '🛒'; // Ikon uang atau belanja
+            
+            const itemHtml = `
+                <div class="bg-white p-4 rounded-2xl flex justify-between items-center shadow-sm border border-gray-50">
+                    <div class="flex items-center gap-3">
+                        <span class="text-xl">${icon}</span>
+                        <div>
+                            <p class="font-bold text-gray-800 text-sm">${tx.description}</p>
+                            <button onclick="deleteTx(${tx.id})" class="text-[10px] text-gray-400 hover:text-rose-500">Hapus</button>
+                        </div>
+                    </div>
+                    <span class="font-bold ${color}">${tx.type === 'income' ? '+' : '-'}${formatIDR(tx.amount)}</span>
+                </div>
+            `;
+            list.innerHTML += itemHtml;
+        });
+
+        // Update Header
+        document.getElementById('balance').innerText = formatIDR(total);
+        document.getElementById('total-income').innerText = formatIDR(income);
+        document.getElementById('total-expense').innerText = formatIDR(expense);
+    }
+
+    // Jalankan pertama kali
+    render();
+</script>
+
+</body>
+</html>
